@@ -11,19 +11,18 @@ const int ULTRASONIC_TRIG_N = D4;
 const int ULTRASONIC_ECHO_N = D3;
 
 // Distance Thresholds (in cm)
-const int OBSTACLE_NEAR = 15;
+const int OBSTACLE_NEAR = 25;
+const int EMERGENCY_STOP = 5;
 
 // Motor Control
 int currentDirection = 1; // 1: forward, -1: backward
-const int MOTOR_SPEED = 125; // Speed of the motor (0-255)
+const int MOTOR_SPEED = 200; // Speed of the motor (0-255)
 
 void setup() {
-  // Set motor pins as outputs
   pinMode(MOTOR_PWM, OUTPUT);
   pinMode(MOTOR_IN1, OUTPUT);
   pinMode(MOTOR_IN2, OUTPUT);
 
-  // Set ultrasonic sensor pins
   pinMode(ULTRASONIC_TRIG_N, OUTPUT);
   pinMode(ULTRASONIC_ECHO_N, INPUT);
   pinMode(ULTRASONIC_TRIG_S, OUTPUT);
@@ -33,42 +32,66 @@ void setup() {
 }
 
 void loop() {
-  int distanceNorth = readDistanceCMNorth();
-  delay(100); // Small delay to avoid interference
-  int distanceSouth = readDistanceCMSouth();
-  Serial.print("Distance North: ");
-  Serial.print(distanceNorth);
-  Serial.print(" cm,\n ");
+  // int distanceNorth = smoothDistance(readDistanceCMNorth);
+  int distanceSouth = smoothDistance(readDistanceCMSouth);
+  
+
+  // if (distanceNorth >= 400) {
+  //   Serial.println("North sensor out of range");
+  //   return;
+  // }
+
+  // Serial.print("Distance North: ");
+  // Serial.print(distanceNorth);
+  // Serial.print(" cm, ");
 
   Serial.print("Distance South: ");
   Serial.print(distanceSouth);
-  Serial.print(" cm,\n");
-  // Move the motor in the current direction
-  
-  Serial.print("Distance South: ");
-  Serial.print(distanceSouth);
-  // if the distance south is less than the minimum distance then reverse the direction
-  // if the distance north is less than the minimum distance then reverse the direction
-  // if the distance south is greater than the minimum distance then move forward
-  // if the distance north is greater than the minimum distance then move forward
-  if (distanceSouth < OBSTACLE_NEAR) {
-    Serial.println("Obstacle detected South, reversing direction");
-    reverseDirection();
+  Serial.println(" cm");
+
+  // Emergency stop for too-close range
+  // if (distanceSouth < EMERGENCY_STOP || distanceNorth < EMERGENCY_STOP) {
+  //   Serial.println("!!! EMERGENCY STOP !!!");
+  //   stopMotor();
+  //   delay(500);
+  //   return;
+  // }
+
+  // Obstacle logic
+  if (distanceSouth < 7) {
+    currentDirection = -1;
+    Serial.println("Obstacle South, reversing direction...");
     stopMotor();
+    delay(200);
+    /* reverseDirection(); */
     moveMotor(currentDirection);
-  
+  } 
+  else if (distanceSouth > 23) {
+    currentDirection = 1;
+    Serial.println("Obstacle North, reversing direction...");
+    stopMotor();
+    delay(200);
+    // reverseDirection();
+    moveMotor(currentDirection);
+  } 
+  else {
+    moveMotor(currentDirection);
   }
-  if (distanceNorth < OBSTACLE_NEAR) {
-    Serial.println("Obstacle detected North, reversing direction");
-    reverseDirection();
-    stopMotor();
-    moveMotor(currentDirection);
-  }  
 
-  delay(100);
+  delay(100); // shorter delay for faster loop
 }
 
-// Reads the distance using HC-SR04
+// Read smoothed distance using 3-sample average
+int smoothDistance(int (*readFunc)()) {
+  int total = 0;
+  for (int i = 0; i < 3; i++) {
+    total += readFunc();
+    delay(10);
+  }
+  return total / 3;
+}
+
+// Reads distance using North HC-SR04
 int readDistanceCMNorth() {
   digitalWrite(ULTRASONIC_TRIG_N, LOW);
   delayMicroseconds(2);
@@ -77,11 +100,10 @@ int readDistanceCMNorth() {
   digitalWrite(ULTRASONIC_TRIG_N, LOW);
 
   long duration = pulseIn(ULTRASONIC_ECHO_N, HIGH);
-  int distanceCM = duration * 0.034 / 2;
-
-  return distanceCM;
+  return duration * 0.034 / 2;
 }
 
+// Reads distance using South HC-SR04
 int readDistanceCMSouth() {
   digitalWrite(ULTRASONIC_TRIG_S, LOW);
   delayMicroseconds(2);
@@ -90,32 +112,31 @@ int readDistanceCMSouth() {
   digitalWrite(ULTRASONIC_TRIG_S, LOW);
 
   long duration = pulseIn(ULTRASONIC_ECHO_S, HIGH);
-  int distanceCM = duration * 0.034 / 2;
-
-  return distanceCM;
+  return duration * 0.034 / 2;
 }
 
-// Controls the motor movement direction
+// Control motor direction and speed
 void moveMotor(int direction) {
   if (direction == 1) {
     digitalWrite(MOTOR_IN1, HIGH);
     digitalWrite(MOTOR_IN2, LOW);
-    analogWrite(MOTOR_PWM, MOTOR_SPEED);
   } else {
     digitalWrite(MOTOR_IN1, LOW);
     digitalWrite(MOTOR_IN2, HIGH);
-    analogWrite(MOTOR_PWM, MOTOR_SPEED);
   }
+  analogWrite(MOTOR_PWM, MOTOR_SPEED);
+  delay(200); // Allow time for motor to start
+  stopMotor();
 }
 
-// Stops the motor
+// Stop motor
 void stopMotor() {
   digitalWrite(MOTOR_IN1, LOW);
   digitalWrite(MOTOR_IN2, LOW);
   analogWrite(MOTOR_PWM, 0);
 }
 
-// Reverses motor direction
+// Reverse direction
 void reverseDirection() {
   currentDirection *= -1;
 }
